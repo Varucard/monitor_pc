@@ -1,0 +1,23 @@
+# Credenciales locales del ESP32 (copiar desde config.example.h)
+esp32_monitor/config.h
+
+# Variables de entorno locales
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ruff_cache/
+
+# Arduino / PlatformIO
+build/
+.pio/
+
+# Editores y sistema operativo
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+
+jobs:
+  python:
+    name: Servidor Python (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: python -m py_compile pc_monitor_server.py
+
+  esp32:
+    name: Sketch ESP32 (compilación)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Crear config.h de ejemplo
+        run: cp esp32_monitor/config.example.h esp32_monitor/config.h
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: esp32:esp32:esp32
+          platforms: |
+            - name: esp32:esp32
+              source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          libraries: |
+            - name: ArduinoJson
+            - name: LiquidCrystal I2C
+          sketch-paths: |
+            - esp32_monitor

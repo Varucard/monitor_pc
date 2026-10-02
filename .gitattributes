@@ -1,0 +1,5 @@
+# Normaliza los finales de línea a LF en el repositorio
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.ps1 text eol=crlf

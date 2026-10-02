@@ -1,0 +1,4 @@
+psutil>=5.9
+requests>=2.31
+GPUtil>=1.4.0          # Opcional: métricas de GPUs NVIDIA
+wmi>=1.5.1 ; sys_platform == "win32"  # Sensores vía LibreHardwareMonitor
