@@ -23,13 +23,15 @@
 
 constexpr uint8_t LCD_COLS = 16;
 constexpr uint8_t LCD_ROWS = 2;
+// Va antes de cualquier función: el IDE de Arduino inserta ahí los prototipos que la usan
+typedef char Row[LCD_COLS + 1];  // Una línea del LCD más el terminador
 LiquidCrystal_I2C lcd(LCD_ADDR, LCD_COLS, LCD_ROWS);
 
 // -------- Variables de UI ----------
 constexpr uint8_t PAGE_COUNT = 5;
 uint8_t page = 0;
 unsigned long pageShownMs = 0;
-char shownRows[LCD_ROWS][LCD_COLS + 1];  // Lo que hay en pantalla, para escribir solo lo que cambia
+Row shownRows[LCD_ROWS];  // Lo que hay en pantalla, para escribir solo lo que cambia
 
 const unsigned long fetchIntervalMs = 1000;
 const unsigned long offlineRetryMs = 5000;  // Con el PC apagado se reintenta con menos frecuencia
@@ -55,14 +57,14 @@ float weather_temp = NAN;
 String weather_desc = "N/A";
 
 // -------- Iconos personalizados (máx 8, 5x8 píxeles) ----------
-byte ICON_CHIP[8]  = { B11111, B10001, B10101, B10101, B10101, B10001, B11111, B00000 };
-byte ICON_THERM[8] = { B00100, B01010, B01010, B01010, B01010, B01110, B01110, B00100 };
-byte ICON_RAM[8]   = { B11111, B10001, B10101, B10101, B10001, B11111, B00100, B00100 };
-byte ICON_DISK[8]  = { B11111, B10001, B10111, B10101, B10101, B10001, B11111, B00000 };
-byte ICON_CLOUD[8] = { B00000, B00000, B00111, B01111, B11111, B11111, B01110, B00000 };
-byte ICON_CLOCK[8] = { B00100, B01010, B10001, B10001, B10101, B10001, B01010, B00100 };
-byte ICON_UP[8]    = { B00100, B01110, B11111, B00100, B00100, B00100, B00100, B00100 };
-byte ICON_DOWN[8]  = { B00100, B00100, B00100, B00100, B11111, B01110, B00100, B00000 };
+byte ICON_CHIP[8]  = { 0b11111, 0b10001, 0b10101, 0b10101, 0b10101, 0b10001, 0b11111, 0b00000 };
+byte ICON_THERM[8] = { 0b00100, 0b01010, 0b01010, 0b01010, 0b01010, 0b01110, 0b01110, 0b00100 };
+byte ICON_RAM[8]   = { 0b11111, 0b10001, 0b10101, 0b10101, 0b10001, 0b11111, 0b00100, 0b00100 };
+byte ICON_DISK[8]  = { 0b11111, 0b10001, 0b10111, 0b10101, 0b10101, 0b10001, 0b11111, 0b00000 };
+byte ICON_CLOUD[8] = { 0b00000, 0b00000, 0b00111, 0b01111, 0b11111, 0b11111, 0b01110, 0b00000 };
+byte ICON_CLOCK[8] = { 0b00100, 0b01010, 0b10001, 0b10001, 0b10101, 0b10001, 0b01010, 0b00100 };
+byte ICON_UP[8]    = { 0b00100, 0b01110, 0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100 };
+byte ICON_DOWN[8]  = { 0b00100, 0b00100, 0b00100, 0b00100, 0b11111, 0b01110, 0b00100, 0b00000 };
 
 // Los caracteres personalizados 0-7 también responden en los códigos 8-15,
 // lo que permite usarlos dentro de cadenas (el 0 cortaría la cadena).
@@ -247,7 +249,6 @@ void formatGb(char* buf, size_t len, float usedMb, float totalMb, size_t maxChar
 }
 
 // -------- Pantallas: cada una arma sus dos líneas de texto ----------
-typedef char Row[LCD_COLS + 1];
 
 void pageOffline(Row l0, Row l1) {
   snprintf(l0, sizeof(Row), "Sin datos del PC");
