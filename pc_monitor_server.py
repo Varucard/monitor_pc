@@ -51,6 +51,10 @@ WEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY", "")
 CITY_NAME = os.environ.get("OPENWEATHER_CITY", "Buenos Aires,AR")
 WEATHER_LANG = os.environ.get("OPENWEATHER_LANG", "es")
 
+# Valores de ejemplo que no deben usarse como token real
+PLACEHOLDER_TOKENS = {"MI_TOKEN_SEGURO", "un-token-largo-y-aleatorio"}
+MIN_TOKEN_LENGTH = 16
+
 SAMPLE_INTERVAL_S = 1.0
 WEATHER_TTL_S = 600  # El plan gratuito de OpenWeather limita las consultas
 WEATHER_RETRY_S = 60
@@ -58,6 +62,7 @@ WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 # Espacios de nombres WMI que publican los monitores de hardware
 HW_MONITOR_NAMESPACES = ("root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor")
+HW_MONITOR_RETRY_S = 30
 CPU_TEMP_NAMES = ("CPU Package", "Core (Tctl/Tdie)", "Core (Tctl)", "Core (Tdie)", "CPU Core")
 GPU_TEMP_NAMES = ("GPU Core",)
 GPU_LOAD_NAMES = ("GPU Core",)
@@ -71,12 +76,7 @@ log = logging.getLogger("pc_monitor")
 
 # -------- Sensores de hardware (WMI) ----------
 def connect_hw_monitor():
-    """Devuelve una conexión WMI al monitor de hardware, o None si no está disponible.
-
-    Debe llamarse desde el mismo hilo que luego consulta los sensores (COM).
-    """
-    if wmi is None:
-        return None
+    """Devuelve una conexión WMI al monitor de hardware, o None si no está disponible."""
     for namespace in HW_MONITOR_NAMESPACES:
         try:
             conn = wmi.WMI(namespace=namespace)
@@ -85,24 +85,61 @@ def connect_hw_monitor():
             return conn
         except Exception:
             continue
-    log.warning("No se encontró LibreHardwareMonitor ni OpenHardwareMonitor; las temperaturas no estarán disponibles.")
     return None
 
 
 def read_hw_sensors(conn):
     """Lee los sensores relevantes como lista de (identificador, nombre, tipo, valor)."""
-    if conn is None:
-        return []
-    try:
-        rows = conn.query(
-            "SELECT Identifier, Name, SensorType, Value FROM Sensor "
-            "WHERE SensorType = 'Temperature' OR SensorType = 'Load' "
-            "OR SensorType = 'SmallData'"
-        )
-        return [(r.Identifier.lower(), r.Name, r.SensorType, r.Value) for r in rows]
-    except Exception:
-        log.debug("Error leyendo sensores WMI", exc_info=True)
-        return []
+    rows = conn.query(
+        "SELECT Identifier, Name, SensorType, Value FROM Sensor "
+        "WHERE SensorType = 'Temperature' OR SensorType = 'Load' "
+        "OR SensorType = 'SmallData'"
+    )
+    return [(r.Identifier.lower(), r.Name, r.SensorType, r.Value) for r in rows]
+
+
+class HardwareMonitor:
+    """Conexión al monitor de hardware que se reintenta mientras no esté disponible.
+
+    Permite abrir o reiniciar LibreHardwareMonitor sin reiniciar el servidor.
+    Debe usarse siempre desde el mismo hilo, porque WMI depende de COM.
+    """
+
+    def __init__(self):
+        self._conn = None
+        self._next_retry = 0.0
+        self._warned = False
+
+    def read(self):
+        if wmi is None:
+            return []
+        if self._conn is None:
+            if time.monotonic() < self._next_retry:
+                return []
+            self._conn = connect_hw_monitor()
+            if self._conn is None:
+                self._schedule_retry()
+                if not self._warned:
+                    log.warning(
+                        "No se encontró LibreHardwareMonitor ni OpenHardwareMonitor; se reintentará cada %d s.",
+                        HW_MONITOR_RETRY_S,
+                    )
+                    self._warned = True
+                return []
+        try:
+            sensors = read_hw_sensors(self._conn)
+        except Exception:
+            log.debug("Error leyendo sensores WMI", exc_info=True)
+            sensors = []
+        if not sensors:  # El monitor se cerró: se descarta la conexión
+            log.warning("Se perdió la conexión con el monitor de hardware; se reintentará.")
+            self._conn = None
+            self._warned = True
+            self._schedule_retry()
+        return sensors
+
+    def _schedule_retry(self):
+        self._next_retry = time.monotonic() + HW_MONITOR_RETRY_S
 
 
 def find_sensor(sensors, device, sensor_type, preferred_names, fallback_max=False):
@@ -214,7 +251,7 @@ class MetricsSampler(threading.Thread):
     def run(self):
         if pythoncom is not None:
             pythoncom.CoInitialize()  # WMI usa COM, que se inicializa por hilo
-        hw_conn = connect_hw_monitor()
+        hw_monitor = HardwareMonitor()
 
         psutil.cpu_percent(interval=None)  # La primera lectura siempre es 0
         prev_net = psutil.net_io_counters()
@@ -225,15 +262,15 @@ class MetricsSampler(threading.Thread):
             try:
                 net = psutil.net_io_counters()
                 now = time.monotonic()
-                data = self._sample(hw_conn, prev_net, net, now - prev_t)
+                data = self._sample(hw_monitor, prev_net, net, now - prev_t)
                 prev_net, prev_t = net, now
                 with self._lock:
                     self._snapshot = data
             except Exception:
                 log.exception("Error tomando la muestra de métricas")
 
-    def _sample(self, hw_conn, prev_net, net, elapsed):
-        sensors = read_hw_sensors(hw_conn)
+    def _sample(self, hw_monitor, prev_net, net, elapsed):
+        sensors = hw_monitor.read()
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage(DISK_PATH)
         gpu_load, gpu_temp, vram_used, vram_total = get_gpu_metrics(sensors)
@@ -304,6 +341,12 @@ def main():
     if not TOKEN:
         log.error("Definí la variable de entorno PC_MONITOR_TOKEN antes de iniciar el servidor.")
         sys.exit(1)
+    if TOKEN in PLACEHOLDER_TOKENS or len(TOKEN) < MIN_TOKEN_LENGTH:
+        log.warning(
+            "PC_MONITOR_TOKEN es un valor de ejemplo o tiene menos de %d caracteres; "
+            'generá uno con: python -c "import secrets; print(secrets.token_urlsafe(24))"',
+            MIN_TOKEN_LENGTH,
+        )
 
     sampler = MetricsSampler()
     sampler.start()

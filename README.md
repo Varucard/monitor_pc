@@ -26,18 +26,20 @@ monitor_pc/
 ## 🚀 Características
 
 - **CPU**: uso (%) y temperatura.
-- **GPU**: uso (%), temperatura y memoria de video.
+- **GPU**: uso (%), temperatura y memoria de video (VRAM).
   - NVIDIA: vía `GPUtil`.
   - AMD / Intel: vía LibreHardwareMonitor (WMI).
-- **RAM y disco**: uso (%).
+- **RAM y disco**: uso (%) y GB de RAM usados/totales.
 - **Red**: velocidad de subida y bajada.
 - **Clima**: temperatura y descripción (OpenWeather, se consulta cada 10 minutos).
 - **Pantallas navegables** con un botón:
   1. CPU (uso + temperatura + red)
-  2. GPU (uso + temperatura)
+  2. GPU (uso + temperatura + VRAM)
   3. RAM y disco
   4. Fecha y hora (NTP)
-  5. Clima
+  5. Clima (si la descripción no entra en 16 caracteres, se desplaza)
+
+La pantalla solo reescribe lo que cambia, sin parpadeo. Si el servidor no responde, muestra "Sin datos del PC" y reintenta cada 5 segundos.
 
 ---
 
@@ -47,7 +49,7 @@ monitor_pc/
 
 - Python 3.8 o superior.
 - **Windows** para las temperaturas (en Linux/macOS funciona, pero sin temperaturas de CPU ni GPU no NVIDIA).
-- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) **ejecutándose** (como administrador) para leer temperaturas de CPU y GPU AMD/Intel. También sirve OpenHardwareMonitor. Windows no publica estas temperaturas por sí solo.
+- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) **ejecutándose** (como administrador) para leer temperaturas de CPU y GPU AMD/Intel. También sirve OpenHardwareMonitor. Windows no publica estas temperaturas por sí solo. Puede abrirse o reiniciarse con el servidor ya en marcha: se reconecta solo cada 30 segundos.
 - Clave de API de [OpenWeather](https://openweathermap.org/api) (opcional, para el clima).
 
 ```bash
@@ -83,6 +85,14 @@ La configuración se toma de variables de entorno, así no quedan secretos en el
 | `OPENWEATHER_CITY` | Ciudad y país. | `Buenos Aires,AR` |
 | `OPENWEATHER_LANG` | Idioma de la descripción del clima. | `es` |
 | `PC_MONITOR_LOG_LEVEL` | Nivel de log (`DEBUG` muestra cada petición). | `INFO` |
+
+Para generar un token seguro:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+Si el token es un valor de ejemplo o tiene menos de 16 caracteres, el servidor arranca igual pero muestra una advertencia.
 
 Ejemplo en PowerShell:
 
@@ -163,7 +173,7 @@ Los campos que no se pueden leer en el equipo se envían como `null`.
 | Síntoma | Causa probable |
 |---|---|
 | El LCD dice "Sin datos del PC" | IP/puerto incorrectos, token distinto, servidor detenido o firewall bloqueando el puerto. |
-| Temperatura `--°C` | LibreHardwareMonitor no está ejecutándose como administrador. |
+| Temperatura `--°C` | LibreHardwareMonitor no está ejecutándose como administrador (al abrirlo, el servidor lo detecta en menos de 30 s). |
 | GPU `N/A` | No hay GPU NVIDIA con `GPUtil` funcional ni LibreHardwareMonitor. |
 | LCD encendido pero sin texto | Ajustar el contraste (potenciómetro del módulo I2C) o probar `LCD_ADDR = 0x3F`. |
 | La hora muestra "Sincronizando" | El ESP32 aún no obtuvo la hora por NTP (requiere salida a internet). |
